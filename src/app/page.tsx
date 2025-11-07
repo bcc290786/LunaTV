@@ -12,7 +12,7 @@ import {
 } from '@/lib/bangumi.client';
 import { getRecommendedShortDramas } from '@/lib/shortdrama.client';
 import { cleanExpiredCache } from '@/lib/shortdrama-cache';
-import { ShortDramaItem } from '@/lib/types';
+import { ShortDramaItem, ReleaseCalendarItem } from '@/lib/types';
 // 客户端收藏 API
 import {
   clearAllFavorites,
@@ -20,7 +20,7 @@ import {
   getAllPlayRecords,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
-import { getDoubanCategories } from '@/lib/douban.client';
+import { getDoubanCategories, getDoubanDetails } from '@/lib/douban.client';
 import { DoubanItem } from '@/lib/types';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 
@@ -46,6 +46,7 @@ function HomeClient() {
   const [bangumiCalendarData, setBangumiCalendarData] = useState<
     BangumiCalendarData[]
   >([]);
+  const [upcomingReleases, setUpcomingReleases] = useState<ReleaseCalendarItem[]>([]);
   const [loading, setLoading] = useState(true);
   const { announcement } = useSite();
   const [username, setUsername] = useState<string>('');
@@ -159,8 +160,8 @@ function HomeClient() {
       try {
         setLoading(true);
 
-        // 并行获取热门电影、热门剧集、热门综艺和热门短剧
-        const [moviesData, tvShowsData, varietyShowsData, shortDramasData, bangumiCalendarData] =
+        // 并行获取热门电影、热门剧集、热门综艺、热门短剧和即将上映
+        const [moviesData, tvShowsData, varietyShowsData, shortDramasData, bangumiCalendarData, upcomingReleasesData] =
           await Promise.allSettled([
             getDoubanCategories({
               kind: 'movie',
@@ -171,32 +172,131 @@ function HomeClient() {
             getDoubanCategories({ kind: 'tv', category: 'show', type: 'show' }),
             getRecommendedShortDramas(undefined, 8),
             GetBangumiCalendarData(),
+            fetch('/api/release-calendar?limit=20').then(res => {
+              if (!res.ok) {
+                console.error('获取即将上映数据失败，状态码:', res.status);
+                return { items: [] };
+              }
+              return res.json();
+            }),
           ]);
 
-        // 处理电影数据
+        // 处理电影数据并获取前2条的详情
         if (moviesData.status === 'fulfilled' && moviesData.value?.code === 200) {
-          setHotMovies(moviesData.value.list);
+          const movies = moviesData.value.list;
+          setHotMovies(movies);
+
+          // 异步获取前2条电影的详情（用于Hero Banner）
+          Promise.all(
+            movies.slice(0, 2).map(async (movie) => {
+              try {
+                const detailsRes = await getDoubanDetails(movie.id);
+                if (detailsRes.code === 200 && detailsRes.data?.plot_summary) {
+                  return { id: movie.id, plot_summary: detailsRes.data.plot_summary };
+                }
+              } catch (error) {
+                console.warn(`获取电影 ${movie.id} 详情失败:`, error);
+              }
+              return null;
+            })
+          ).then((results) => {
+            setHotMovies(prev =>
+              prev.map(m => {
+                const detail = results.find(r => r?.id === m.id);
+                return detail ? { ...m, plot_summary: detail.plot_summary } : m;
+              })
+            );
+          });
         } else {
           console.warn('获取热门电影失败:', moviesData.status === 'rejected' ? moviesData.reason : '数据格式错误');
         }
 
-        // 处理剧集数据
+        // 处理剧集数据并获取前2条的详情
         if (tvShowsData.status === 'fulfilled' && tvShowsData.value?.code === 200) {
-          setHotTvShows(tvShowsData.value.list);
+          const tvShows = tvShowsData.value.list;
+          setHotTvShows(tvShows);
+
+          // 异步获取前2条剧集的详情（用于Hero Banner）
+          Promise.all(
+            tvShows.slice(0, 2).map(async (show) => {
+              try {
+                const detailsRes = await getDoubanDetails(show.id);
+                if (detailsRes.code === 200 && detailsRes.data?.plot_summary) {
+                  return { id: show.id, plot_summary: detailsRes.data.plot_summary };
+                }
+              } catch (error) {
+                console.warn(`获取剧集 ${show.id} 详情失败:`, error);
+              }
+              return null;
+            })
+          ).then((results) => {
+            setHotTvShows(prev =>
+              prev.map(s => {
+                const detail = results.find(r => r?.id === s.id);
+                return detail ? { ...s, plot_summary: detail.plot_summary } : s;
+              })
+            );
+          });
         } else {
           console.warn('获取热门剧集失败:', tvShowsData.status === 'rejected' ? tvShowsData.reason : '数据格式错误');
         }
 
-        // 处理综艺数据
+        // 处理综艺数据并获取第1条的详情
         if (varietyShowsData.status === 'fulfilled' && varietyShowsData.value?.code === 200) {
-          setHotVarietyShows(varietyShowsData.value.list);
+          const varietyShows = varietyShowsData.value.list;
+          setHotVarietyShows(varietyShows);
+
+          // 异步获取第1条综艺的详情（用于Hero Banner）
+          if (varietyShows.length > 0) {
+            const show = varietyShows[0];
+            getDoubanDetails(show.id)
+              .then((detailsRes) => {
+                if (detailsRes.code === 200 && detailsRes.data?.plot_summary) {
+                  setHotVarietyShows(prev =>
+                    prev.map(s => s.id === show.id
+                      ? { ...s, plot_summary: detailsRes.data!.plot_summary }
+                      : s
+                    )
+                  );
+                }
+              })
+              .catch((error) => {
+                console.warn(`获取综艺 ${show.id} 详情失败:`, error);
+              });
+          }
         } else {
           console.warn('获取热门综艺失败:', varietyShowsData.status === 'rejected' ? varietyShowsData.reason : '数据格式错误');
         }
 
-        // 处理短剧数据
+        // 处理短剧数据并获取前2条的详情
         if (shortDramasData.status === 'fulfilled') {
-          setHotShortDramas(shortDramasData.value);
+          const dramas = shortDramasData.value;
+          setHotShortDramas(dramas);
+
+          // 异步获取前2条短剧的详情（用于Hero Banner）
+          Promise.all(
+            dramas.slice(0, 2).map(async (drama) => {
+              try {
+                const response = await fetch(`/api/shortdrama/detail?id=${drama.id}&episode=1`);
+                if (response.ok) {
+                  const detailData = await response.json();
+                  if (detailData.desc) {
+                    return { id: drama.id, description: detailData.desc };
+                  }
+                }
+              } catch (error) {
+                console.warn(`获取短剧 ${drama.id} 详情失败:`, error);
+              }
+              return null;
+            })
+          ).then((results) => {
+            setHotShortDramas(prev =>
+              prev.map(d => {
+                const detail = results.find(r => r?.id === d.id);
+                return detail ? { ...d, description: detail.description } : d;
+              })
+            );
+          });
         } else {
           console.warn('获取热门短剧失败:', shortDramasData.reason);
           setHotShortDramas([]);
@@ -204,11 +304,90 @@ function HomeClient() {
 
         // 处理bangumi数据，防止接口失败导致页面崩溃
         if (bangumiCalendarData.status === 'fulfilled' && Array.isArray(bangumiCalendarData.value)) {
-          setBangumiCalendarData(bangumiCalendarData.value);
+          const bangumiData = bangumiCalendarData.value;
+          setBangumiCalendarData(bangumiData);
+
+          // 获取今天的番剧并尝试获取详情（用于Hero Banner）
+          const today = new Date();
+          const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          const currentWeekday = weekdays[today.getDay()];
+          const todayAnimes = bangumiData.find(
+            (item) => item.weekday.en === currentWeekday
+          )?.items || [];
+
+          // 如果今天有番剧且第一个番剧没有summary，尝试获取详情
+          if (todayAnimes.length > 0 && !todayAnimes[0].summary) {
+            const anime = todayAnimes[0];
+            try {
+              const response = await fetch(`https://api.bgm.tv/v0/subjects/${anime.id}`);
+              if (response.ok) {
+                const detailData = await response.json();
+                if (detailData.summary) {
+                  // 更新 bangumiCalendarData 中对应的番剧
+                  setBangumiCalendarData(prev =>
+                    prev.map(dayData => {
+                      if (dayData.weekday.en === currentWeekday) {
+                        return {
+                          ...dayData,
+                          items: dayData.items.map(item =>
+                            item.id === anime.id
+                              ? { ...item, summary: detailData.summary }
+                              : item
+                          )
+                        };
+                      }
+                      return dayData;
+                    })
+                  );
+                }
+              }
+            } catch (error) {
+              console.warn(`获取番剧 ${anime.id} 详情失败:`, error);
+            }
+          }
         } else {
           console.warn('Bangumi接口失败或返回数据格式错误:',
             bangumiCalendarData.status === 'rejected' ? bangumiCalendarData.reason : '数据格式错误');
           setBangumiCalendarData([]);
+        }
+
+        // 处理即将上映数据
+        if (upcomingReleasesData.status === 'fulfilled' && upcomingReleasesData.value?.items) {
+          const releases = upcomingReleasesData.value.items;
+          console.log('📅 获取到的即将上映数据:', releases.length, '条');
+
+          // 过滤出未来上映的作品（未来30天内）
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const thirtyDaysLater = new Date(today);
+          thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30);
+
+          const upcoming = releases.filter((item: ReleaseCalendarItem) => {
+            const releaseDate = new Date(item.releaseDate);
+            const isUpcoming = releaseDate >= today && releaseDate <= thirtyDaysLater;
+            return isUpcoming;
+          });
+
+          // 去重：基于标题去重，保留最早的那条记录
+          const uniqueUpcoming = upcoming.reduce((acc: ReleaseCalendarItem[], current: ReleaseCalendarItem) => {
+            const existingItem = acc.find(item => item.title === current.title);
+            if (!existingItem) {
+              acc.push(current);
+            } else {
+              // 如果已存在，保留上映日期更早的
+              const existingIndex = acc.findIndex(item => item.title === current.title);
+              if (new Date(current.releaseDate) < new Date(existingItem.releaseDate)) {
+                acc[existingIndex] = current;
+              }
+            }
+            return acc;
+          }, []);
+
+          console.log('📅 去重后的即将上映数据:', uniqueUpcoming.length, '条');
+          setUpcomingReleases(uniqueUpcoming.slice(0, 10)); // 最多显示10个
+        } else {
+          console.warn('获取即将上映数据失败:', upcomingReleasesData.status === 'rejected' ? upcomingReleasesData.reason : '数据格式错误');
+          setUpcomingReleases([]);
         }
       } catch (error) {
         console.error('获取推荐数据失败:', error);
@@ -353,7 +532,7 @@ function HomeClient() {
           )}
         </div>
 
-        <div className='max-w-[95%] mx-auto'>
+        <div className='w-full mx-auto'>
           {activeTab === 'favorites' ? (
             // 收藏夹视图
             <section className='mb-8'>
@@ -421,20 +600,75 @@ function HomeClient() {
             // 首页视图
             <>
               {/* Hero Banner 轮播 */}
-              {!loading && (hotMovies.length > 0 || hotTvShows.length > 0) && (
+              {!loading && (hotMovies.length > 0 || hotTvShows.length > 0 || hotVarietyShows.length > 0 || hotShortDramas.length > 0) && (
                 <section className='mb-8'>
                   <HeroBanner
-                    items={[...hotMovies.slice(0, 5), ...hotTvShows.slice(0, 3)]
-                      .map((item) => ({
-                        id: item.id,
-                        title: item.title,
-                        poster: item.poster,
-                        description: item.plot_summary,
-                        year: item.year,
-                        rate: item.rate,
-                        douban_id: Number(item.id),
-                        type: hotMovies.includes(item) ? 'movie' : 'tv',
-                      }))}
+                    items={[
+                      // 豆瓣电影
+                      ...hotMovies.slice(0, 2).map((movie) => ({
+                        id: movie.id,
+                        title: movie.title,
+                        poster: movie.poster,
+                        description: movie.plot_summary,
+                        year: movie.year,
+                        rate: movie.rate,
+                        douban_id: Number(movie.id),
+                        type: 'movie',
+                      })),
+                      // 豆瓣电视剧
+                      ...hotTvShows.slice(0, 2).map((show) => ({
+                        id: show.id,
+                        title: show.title,
+                        poster: show.poster,
+                        description: show.plot_summary,
+                        year: show.year,
+                        rate: show.rate,
+                        douban_id: Number(show.id),
+                        type: 'tv',
+                      })),
+                      // 豆瓣综艺
+                      ...hotVarietyShows.slice(0, 1).map((show) => ({
+                        id: show.id,
+                        title: show.title,
+                        poster: show.poster,
+                        description: show.plot_summary,
+                        year: show.year,
+                        rate: show.rate,
+                        douban_id: Number(show.id),
+                        type: 'variety',
+                      })),
+                      // 短剧（非豆瓣）
+                      ...hotShortDramas.slice(0, 2).map((drama) => ({
+                        id: drama.id,
+                        title: drama.name,
+                        poster: drama.cover,
+                        description: drama.description,
+                        year: '',
+                        rate: drama.score ? drama.score.toString() : '',
+                        type: 'shortdrama',
+                      })),
+                      // 番剧（非豆瓣，来自 bangumi）
+                      ...(bangumiCalendarData.length > 0
+                        ? (() => {
+                            const today = new Date();
+                            const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                            const currentWeekday = weekdays[today.getDay()];
+                            const todayAnimes = bangumiCalendarData.find(
+                              (item) => item.weekday.en === currentWeekday
+                            )?.items || [];
+                            return todayAnimes.slice(0, 1).map((anime) => ({
+                              id: anime.id,
+                              title: anime.name_cn || anime.name,
+                              poster: anime.images?.large || anime.images?.common || anime.images?.medium || '/placeholder-poster.jpg',
+                              description: anime.summary,
+                              year: anime.air_date?.split('-')?.[0] || '',
+                              rate: anime.rating?.score?.toFixed(1) || '',
+                              douban_id: anime.id,
+                              type: 'anime',
+                            }));
+                          })()
+                        : [])
+                    ]}
                     autoPlayInterval={5000}
                     showControls={true}
                     showIndicators={true}
@@ -444,6 +678,56 @@ function HomeClient() {
 
               {/* 继续观看 */}
               <ContinueWatching />
+
+              {/* 即将上映 */}
+              {(() => {
+                console.log('🔍 即将上映 section 渲染检查:', { loading, upcomingReleasesCount: upcomingReleases.length });
+                return null;
+              })()}
+              {!loading && upcomingReleases.length > 0 && (
+                <section className='mb-8'>
+                  <div className='mb-4 flex items-center justify-between'>
+                    <SectionTitle title="即将上映" icon={Calendar} iconColor="text-orange-500" />
+                    <Link
+                      href='/release-calendar'
+                      className='flex items-center text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors'
+                    >
+                      查看更多
+                      <ChevronRight className='w-4 h-4 ml-1' />
+                    </Link>
+                  </div>
+                  <ScrollableRow>
+                    {upcomingReleases.map((release, index) => {
+                      // 计算距离上映还有几天
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      const releaseDate = new Date(release.releaseDate);
+                      const daysUntilRelease = Math.ceil((releaseDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+                      return (
+                        <div
+                          key={`${release.id}-${index}`}
+                          className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                        >
+                          <VideoCard
+                            source='upcoming_release'
+                            id={release.id}
+                            source_name='即将上映'
+                            from='douban'
+                            title={release.title}
+                            poster={release.cover || '/placeholder-poster.jpg'}
+                            year={release.releaseDate.split('-')[0]}
+                            type={release.type}
+                            remarks={`${daysUntilRelease}天后上映`}
+                            query={release.title}
+                            episodes={release.type === 'tv' ? 99 : 1}
+                          />
+                        </div>
+                      );
+                    })}
+                  </ScrollableRow>
+                </section>
+              )}
 
               {/* 热门电影 */}
               <section className='mb-8'>
