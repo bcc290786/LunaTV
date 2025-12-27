@@ -208,17 +208,24 @@ export const VirtualDoubanGrid = React.forwardRef<VirtualDoubanGridRef, VirtualD
       return <div style={{ ...style, visibility: 'hidden' }} />;
     }
 
+    // 🎯 图片加载优化：首屏25张卡片使用 priority 预加载
+    const isPriorityImage = index < INITIAL_BATCH_SIZE;
+
     return (
       <div style={{ ...style, padding: '8px' }} {...ariaAttributes}>
         <VideoCard
           from='douban'
+          source='douban'
+          id={item.id}
+          source_name='豆瓣'
           title={item.title}
           poster={item.poster}
           douban_id={Number(item.id)}
           rate={item.rate}
           year={item.year}
-          type={cellType === 'movie' ? 'movie' : ''} // 电影类型严格控制，tv 不控
+          type={cellType === 'movie' ? 'movie' : cellType === 'show' ? 'variety' : cellType === 'tv' ? 'tv' : cellType === 'anime' ? 'anime' : ''}
           isBangumi={cellIsBangumi}
+          priority={isPriorityImage}
         />
       </div>
     );

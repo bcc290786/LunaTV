@@ -339,7 +339,7 @@ export async function configSelfCheck(adminConfig: AdminConfig): Promise<AdminCo
     const ownerUser = process.env.USERNAME;
 
     // 创建用户列表：保留数据库中存在的用户的配置信息
-    const updatedUsers = dbUsers.map(username => {
+    const updatedUsers = await Promise.all(dbUsers.map(async username => {
       // 查找现有配置中是否有这个用户
       const existingUserConfig = adminConfig.UserConfig.Users.find(u => u.username === username);
 
@@ -348,13 +348,33 @@ export async function configSelfCheck(adminConfig: AdminConfig): Promise<AdminCo
         return existingUserConfig;
       } else {
         // 新用户，创建默认配置
+        // 🔧 修复：尝试从数据库获取用户的首次登录时间作为 createdAt
+        let createdAt = Date.now(); // 默认使用当前时间
+        try {
+          const userStats = await db.getUserPlayStat(username);
+          // 使用首次登录时间作为注册时间
+          if (userStats.firstLoginTime) {
+            createdAt = userStats.firstLoginTime;
+          } else if (userStats.lastLoginTime) {
+            // 如果没有首次登录时间，使用最后登录时间作为后备
+            createdAt = userStats.lastLoginTime;
+          } else if (userStats.lastLoginDate) {
+            // 兼容旧字段
+            createdAt = userStats.lastLoginDate;
+          }
+        } catch (err) {
+          // 获取失败时使用当前时间
+          console.warn(`获取用户 ${username} 登录统计失败，使用当前时间作为 createdAt:`, err);
+        }
+
         return {
           username,
           role: username === ownerUser ? ('owner' as const) : ('user' as const),
           banned: false,
+          createdAt, // 🔑 设置 createdAt 字段
         };
       }
-    });
+    }));
 
     // 更新用户列表
     adminConfig.UserConfig.Users = updatedUsers;
@@ -407,6 +427,22 @@ export async function configSelfCheck(adminConfig: AdminConfig): Promise<AdminCo
       maxResults: 25,                                   // 默认每页25个结果
       enabledRegions: ['US', 'CN', 'JP', 'KR', 'GB', 'DE', 'FR'], // 默认启用的地区
       enabledCategories: ['Film & Animation', 'Music', 'Gaming', 'News & Politics', 'Entertainment'] // 默认启用的分类
+    };
+  }
+
+  // 确保短剧配置有默认值
+  if (!adminConfig.ShortDramaConfig) {
+    adminConfig.ShortDramaConfig = {
+      primaryApiUrl: 'https://api.r2afosne.dpdns.org',  // 默认主API
+      alternativeApiUrl: '',                            // 默认为空，需要管理员配置
+      enableAlternative: false,                         // 默认关闭备用API
+    };
+  }
+
+  // 确保下载配置有默认值
+  if (!adminConfig.DownloadConfig) {
+    adminConfig.DownloadConfig = {
+      enabled: true,                                    // 默认启用下载功能
     };
   }
 

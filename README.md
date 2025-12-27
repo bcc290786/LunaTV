@@ -17,15 +17,15 @@
 
 <div align="center">
 
-![Next.js](https://img.shields.io/badge/Next.js-14.2.23-000?logo=nextdotjs)
-![React](https://img.shields.io/badge/React-18.2.0-61dafb?logo=react)
-![TypeScript](https://img.shields.io/badge/TypeScript-4.9.5-3178c6?logo=typescript)
-![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4.17-38bdf8?logo=tailwindcss)
+![Next.js](https://img.shields.io/badge/Next.js-16.1.0-000?logo=nextdotjs)
+![React](https://img.shields.io/badge/React-19.0.0-61dafb?logo=react)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.8.3-3178c6?logo=typescript)
+![TailwindCSS](https://img.shields.io/badge/TailwindCSS-4.1.18-38bdf8?logo=tailwindcss)
 ![ArtPlayer](https://img.shields.io/badge/ArtPlayer-5.3.0-ff6b6b)
 ![HLS.js](https://img.shields.io/badge/HLS.js-1.6.15-ec407a)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Docker Ready](https://img.shields.io/badge/Docker-ready-blue?logo=docker)
-![Version](https://img.shields.io/badge/Version-5.7.0-orange)
+![Version](https://img.shields.io/badge/Version-5.8.0-orange)
 
 </div>
 
@@ -33,27 +33,28 @@
 
 ## 📢 项目说明
 
-本项目是在 **MoonTV** 基础上进行的深度二次开发版本，从 **v4.3.1** 版本开始，持续迭代至当前 **v5.7.0**，累计新增 50+ 重大功能模块，300+ 细节优化。所有新增功能详见 [CHANGELOG](CHANGELOG)。
+本项目是在 **MoonTV** 基础上进行的深度二次开发版本，从 **v4.3.1** 版本开始，持续迭代至当前 **v5.8.0**，累计新增 50+ 重大功能模块，300+ 细节优化。所有新增功能详见 [CHANGELOG](CHANGELOG)。
 
 ### 💡 核心增强亮点
 
 #### 🎥 内容生态扩展
 - **YouTube 集成**：完整的 YouTube 搜索、播放、直播功能，支持无 Cookie 域名减少验证
 - **网盘搜索 (PanSou)**：集成高级筛选和缓存管理的网盘资源搜索
-- **短剧完整功能**：短剧搜索、播放、详情展示，专用移动端 API 代理
+- **短剧完整功能**：短剧搜索、播放、详情展示，专用移动端 API 代理，备用API集数不可用时自动跳到下一集
 - **IPTV 直播**：m3u/m3u8 订阅、EPG 节目单（支持多源和 url-tvg）、直播源聚合、台标代理、频道当前源内搜索、直播源标签页快速搜索
 - **Bangumi 动漫**：动漫信息智能检测、API 集成、缓存机制
 
 #### 🤖 智能推荐系统
-- **AI 内容推荐**：支持 GPT-5/o 系列模型，动态提示词管理
+- **AI 智能助手**：全局AI推荐按钮（ModernNav导航栏），支持 GPT-5/o 系列模型，动态提示词管理，85-90% 输入延迟优化
 - **多卡片类型**：影视推荐、YouTube 视频、视频链接解析
 - **TMDB 演员搜索**：完整的演员搜索、过滤和缓存
+- **交互式演员作品查看器**：播放页面内联显示演员作品，2小时缓存，TMDB备用数据源
 - **发布日历与即将上映**：即将上线内容预览和跟踪，支持收藏即将上映内容，上映后自动可播放
 
 #### 💬 弹幕生态系统
 - **第三方弹幕 API**：集成腾讯视频、爱奇艺、优酷、B站等主流平台，智能内容匹配防预告
 - **智能性能优化**：基于设备性能的分级渲染、Web Worker 加速、硬件加速
-- **完整配置系统**：字号、速度、透明度、显示区域、防重叠等全方位调节
+- **综合设置面板**：集成到全局设置的完整弹幕配置面板，支持字号、速度、透明度、显示区域、防重叠等全方位调节
 - **智能缓存机制**：localStorage 持久化，30 分钟缓存，自动清理过期数据
 - **Web端专用输入**：简洁"弹字"按钮，一键快速发送弹幕（移动端自动隐藏）
 
@@ -62,10 +63,12 @@
 - **用户等级系统**：取代大数字登录次数，提供友好的等级显示
 - **播放统计系统**：完整的观看数据统计、分析、可视化，支持全局统计和个人统计选项卡切换
 - **双重提醒系统**：新剧集（红色主题）和继续观看（蓝色主题）独立分类，渐变徽章和光环效果
+- **全局收藏功能**：支持跨设备同步的收藏系统，数据存储到数据库，支持分类筛选（电影、剧集、综艺、短剧、番剧）
 - **用户组权限**：精细化权限控制，支持 AI 助手、YouTube 等功能权限
 - **非活跃用户清理**：智能自动清理机制，详细配置和日志
 
 #### 🎮 播放器功能强化
+- **Liquid-glass 毛玻璃控制栏**：现代化的毛玻璃效果控制栏，12px 模糊背景，响应式按钮自适应，完美解决移动端按钮溢出问题
 - **Chromecast 投屏**：智能浏览器检测，自动排除OPPO、小米、华为、三星等厂商浏览器
 - **iPad/iOS 优化**：HLS.js 官方源码优化，智能设备检测，多重自动播放策略
 - **跳过片头片尾**：实时标记按钮、可拖拽悬浮窗配置、剩余时间模式、位置持久化存储
@@ -81,7 +84,9 @@
 - **虚拟滚动美化开关**：渐变样式、图标、动画效果，用户可自由切换显示模式
 - **响应式网格**：2-8 列自适应，自动计算最优布局
 - **豆瓣详情增强**：评分、演职人员、首播日期、时长、制作信息完整展示，海报代理防403错误
+- **豆瓣评论集成**：播放页面展示豆瓣用户评论，提供更丰富的影片讨论和观影体验
 - **演员头像与推荐影片**：播放页展示演员头像（支持 celebrity 和 personage URL）、类似影片推荐，智能图片代理（自动迁移 direct 到 server 模式）
+- **完结系列集数统计**：搜索和分类页面显示完结系列的总集数，方便用户了解内容规模
 - **用户菜单增强**：更新提醒、继续观看（含新剧集徽章）、我的收藏快捷入口、TVBox设置集成
 - **登录界面现代化**：动态随机壁纸、渐变卡片、响应式设计
 - **返回顶部按钮**：发布日历等长页面快捷返回
@@ -92,7 +97,9 @@
 - **TVBox 智能搜索代理**：成人内容过滤、路径前缀支持、UI 控制开关
 - **成人内容管理**：双层过滤系统、自动检测、批量操作、用户/组级别控制
 - **视频源导入导出**：支持数组和配置文件格式导出，便于备份和迁移
+- **备用 API 支持**：搜索和首页数据加载支持备用 API，当主 API 失败时自动切换，提高系统稳定性和可用性
 - **日历缓存迁移**：从 localStorage 迁移至数据库，支持跨设备同步
+- **收藏数据库存储**：全局收藏数据存储到数据库，支持跨设备同步和分类管理
 - **缓存优化**：统一缓存管理（YouTube、网盘、豆瓣、弹幕）
 - **存储模式增强**：Kvrocks/Redis/Upstash 完整支持，内存缓存防 QuotaExceededError
 
@@ -125,18 +132,19 @@
 ## ✨ 完整功能列表
 
 ### 🎬 内容聚合
-- ✅ 多源影视聚合搜索（流式输出、智能变体、语言感知过滤）
+- ✅ 多源影视聚合搜索（流式输出、智能变体、语言感知过滤、备用 API 支持）
 - ✅ YouTube 集成（搜索、直播、iframe 播放、时间筛选和排序）
 - ✅ 网盘搜索（PanSou 集成、高级筛选、缓存管理）
 - ✅ 短剧完整功能（搜索、播放、专用详情页、移动端API代理）
 - ✅ IPTV 直播（m3u 订阅、EPG 节目单、多源支持、url-tvg、源聚合、频道搜索）
 - ✅ Bangumi 动漫（信息检测、API 集成、3-6位ID支持）
 - ✅ TMDB 演员搜索（过滤、缓存）
+- ✅ 完结系列集数统计（搜索和分类页面显示总集数）
 
 ### 🤖 智能推荐
 - ✅ AI 推荐系统（GPT-5/o 支持、动态提示词）
 - ✅ 发布日历（即将上线内容预览）
-- ✅ 豆瓣详情增强（完整演职人员信息）
+- ✅ 豆瓣详情增强（完整演职人员信息、用户评论展示）
 - ✅ 智能搜索优化（语言感知、模糊匹配）
 
 ### 💬 弹幕系统
@@ -153,15 +161,17 @@
 - ✅ 用户等级系统（取代大数字登录次数）
 - ✅ 播放统计（观看时长、影片数量、最近记录、全局/个人选项卡切换）
 - ✅ 双重提醒系统（新剧集红色主题、继续观看蓝色主题、渐变徽章）
+- ✅ 全局收藏功能（跨设备同步、数据库存储、分类筛选：电影/剧集/综艺/短剧/番剧）
 - ✅ VideoCard观看更新显示（替代弹窗式更新）
 - ✅ 用户组权限（AI、YouTube 等功能控制）
 - ✅ 非活跃用户自动清理（智能配置、日志记录）
 - ✅ 登录时间追踪（增强管理员分析能力）
 
 ### 🎮 播放器增强
+- ✅ Liquid-glass 毛玻璃控制栏（12px 模糊、响应式按钮、移动端完美适配）
 - ✅ Chromecast 投屏
 - ✅ iPad/iOS 优化（HLS.js 配置、自动播放）
-- ✅ 弹幕面板（移动端精确定位）
+- ✅ 弹幕面板（移动端精确定位、优化显示和交互）
 - ✅ 音量控制优化
 - ✅ 跳过片头片尾
 - ✅ 直播DVR检测（播放器加载后自动检测DVR/时移支持，显示可seek时间范围，一键启用进度条模式）
@@ -176,6 +186,8 @@
 - ✅ 虚拟滚动美化开关（渐变样式、图标、动画、用户可切换）
 - ✅ 响应式网格（2-8 列自适应、实际容器宽度动态计算）
 - ✅ 豆瓣详情增强（评分、演职人员、首播日期、时长、制作信息、海报代理防403）
+- ✅ 豆瓣评论集成（播放页展示用户评论、丰富观影体验）
+- ✅ 完结系列集数统计（搜索和分类页显示总集数、内容规模一目了然）
 - ✅ 用户菜单增强（更新提醒、继续观看含新剧集徽章、收藏快捷入口、TVBox设置）
 - ✅ 登录注册现代化（动态随机壁纸、渐变卡片、响应式设计）
 - ✅ 返回顶部按钮（发布日历等长页面）
@@ -189,9 +201,11 @@
 - ✅ TVBox 智能搜索代理（成人内容过滤、路径前缀支持、UI控制）
 - ✅ 成人内容管理系统（双层过滤、自动检测、批量操作、用户/组级别控制）
 - ✅ 视频源导入导出（数组/配置文件格式、备份迁移、快速复制按钮）
+- ✅ 备用 API 支持（主 API 失败自动切换、提高系统稳定性）
 - ✅ 源浏览器和测试模块（源站测试、健康检查、移动端响应式）
 - ✅ 资源搜索 API 权限验证（增强安全性）
 - ✅ 日历缓存数据库迁移
+- ✅ 收藏数据库存储（跨设备同步、分类管理）
 - ✅ 统一缓存管理系统
 - ✅ Kvrocks/Redis/Upstash 存储
 - ✅ 内存缓存防 QuotaExceededError
@@ -231,16 +245,16 @@
 
 | 分类      | 主要依赖                                                                                              |
 | --------- | ----------------------------------------------------------------------------------------------------- |
-| 前端框架  | [Next.js 14.2.23](https://nextjs.org/) · App Router                                                        |
-| UI & 样式 | [Tailwind CSS 3.4.17](https://tailwindcss.com/) · [Framer Motion 12](https://www.framer.com/motion/)                                                       |
-| 语言      | TypeScript 4.9.5                                                                                          |
+| 前端框架  | [Next.js 16.1.0](https://nextjs.org/) · App Router                                                        |
+| UI & 样式 | [Tailwind CSS 4.1.18](https://tailwindcss.com/) · [Framer Motion 12.18.1](https://www.framer.com/motion/)                                                       |
+| 语言      | TypeScript 5.8.3                                                                                          |
 | 播放器    | [ArtPlayer 5.3.0](https://github.com/zhw2590582/ArtPlayer) · [HLS.js 1.6.15](https://github.com/video-dev/hls.js/)  · [artplayer-plugin-danmuku 5.2.0](https://github.com/zhw2590582/ArtPlayer) |
-| 状态管理  | React Context API · React Hooks                                                                              |
+| 状态管理  | React 19.0.0 Context API · React Hooks                                                                              |
 | 数据存储  | Kvrocks · Redis · Upstash · localStorage                                                                              |
-| 虚拟化  | [react-window 2.2.0](https://github.com/bvaughn/react-window) · ResizeObserver                                                                              |
-| UI 组件  | [@headlessui/react 2](https://headlessui.com/) · [Lucide Icons](https://lucide.dev/) · [React Icons 5](https://react-icons.github.io/react-icons/)                                                                              |
-| 代码质量  | ESLint · Prettier · Jest · Husky                                                                              |
-| 部署      | Docker · Docker Compose                                                                    |
+| 虚拟化  | [react-window 2.2.3](https://github.com/bvaughn/react-window) · ResizeObserver                                                                              |
+| UI 组件  | [@headlessui/react 2.2.4](https://headlessui.com/) · [Lucide Icons 0.438.0](https://lucide.dev/) · [React Icons 5.4.0](https://react-icons.github.io/react-icons/)                                                                              |
+| 代码质量  | ESLint 9.28.0 · Prettier 3.5.3 · Jest 29.7.0 · Husky 7.0.4                                                                              |
+| 部署      | Docker · Docker Compose · pnpm 10.14.0                                                                    |
 
 ---
 
@@ -873,36 +887,36 @@ services:
 
 完整的功能更新和 Bug 修复记录请查看 [CHANGELOG](CHANGELOG)。
 
-### 最新版本：v5.7.0 (2025-12-06)
+### 最新版本：v5.8.0 (2025-12-24)
 
 #### 新增功能
-- 🎭 演员头像和推荐影片功能：在播放页面展示演员头像和类似影片推荐
-- 🔍 直播源标签页搜索功能：为直播源标签页添加搜索功能，快速查找直播频道
+- 🎯 AI推荐按钮：在ModernNav导航栏添加AI智能推荐按钮，全局可用
+- 🎬 短剧自动跳集：备用API集数不可用时自动跳到下一集
+- ⚡ 升级到Next.js 16.1 + Tailwind CSS 4.1 + React 19：享受最新框架性能提升
+- 🎭 TMDB演员作品备用：添加TMDB作为演员作品搜索的备用数据源
+- 💾 演员作品缓存：缓存演员作品信息2小时，减少API请求
+- 🎨 交互式演员作品查看器：在播放页面添加交互式演员作品浏览功能
+- ⚙️ 弹幕综合设置：添加完整的弹幕设置面板，支持速度、透明度、字体等配置
 
-#### 优化改进
-- 🖼️ 默认图片代理模式改为 server：在所有组件中将默认图片代理从 direct 改为 server 模式
-- 📅 演员信息显示优化：为演员姓名和角色添加 tooltip，防止文本截断
-- 📦 升级依赖：升级 hls.js 到 v1.6.15
+#### 性能优化
+- ⚡ AI聊天性能大幅提升：输入延迟减少85-90%，消息重渲染减少70-85%
+  - 添加100ms防抖滚动和300ms防抖的异步localStorage写入
+  - 使用useCallback记忆化所有事件处理函数
+  - 创建记忆化MessageItem组件，使用useMemo缓存格式化内容
+- 🎨 VideoCard容器查询：为VideoCard添加Tailwind 4容器查询支持
+- ⚡ React 19特性应用：使用useTransition和useOptimistic优化用户体验
 
 #### Bug 修复
-- 🖼️ 修复演员头像显示问题：
-  - 支持 `/celebrity/` 和 `/personage/` URL 格式
-  - 过滤默认占位符头像
-  - 实现图片代理自动修复（从 direct 迁移到 server 模式）
-  - 自动迁移旧版 localStorage 配置
-- 📱 修复推荐卡片移动端导航问题：
-  - 使用捕获阶段事件监听拦截 VideoCard 内部事件
-  - 添加长按检测（500ms）以保留操作菜单功能
-  - 修复移动端点击跳转到页面顶部的问题
-  - 保留所有 VideoCard hover 效果和 UI 显示
-- 🎯 修复推荐卡片事件冲突：
-  - 使用 `addEventListener` 的捕获模式优先拦截事件
-  - 添加 `stopImmediatePropagation` 防止事件干扰
-  - 短按跳转，长按显示菜单，完美兼容移动端和桌面端
-- 🔧 修复日期计算不一致性：修复首页和发布日历之间的日期计算差异
+- 🐛 短剧错误信息显示：在短剧播放器中显示实际的API错误信息
+- 🔧 备用API错误处理：改进备用API字符串响应的错误处理
+- 🎯 AI模态框居中：修复AI模态框居中问题
+- 🖼️ TMDB API白屏修复：使用TMDB API路由替代客户端导入
+- 🎮 弹幕速度设置：修复弹幕速度设置以匹配原生插件数值
 
 ### 重大里程碑版本
 
+- **v5.8.0**：Next.js 16.1 + React 19 + Tailwind CSS 4.1、AI聊天性能优化、演员作品查看器、弹幕设置面板
+- **v5.7.1**：Liquid-glass 毛玻璃控制栏、豆瓣评论、全局收藏、备用 API、完结系列集数统计
 - **v5.7.0**：演员头像和推荐影片、直播源搜索、图片代理优化、移动端导航修复
 - **v5.6.3**：短剧多源搜索、智能源过滤、即将上映智能分布、全面z-index冲突修复
 - **v5.6.2**：即将上映日历、英雄横幅全品类支持、直播DVR检测、移动端横幅优化
