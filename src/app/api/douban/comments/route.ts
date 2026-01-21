@@ -1,25 +1,27 @@
 import { NextResponse } from 'next/server';
 
 import { getCacheTime } from '@/lib/config';
-
-// 用户代理池
-const USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-];
+import { bypassDoubanChallenge } from '@/lib/puppeteer';
+import { getRandomUserAgent } from '@/lib/user-agent';
 
 // 请求限制器
 let lastRequestTime = 0;
 const MIN_REQUEST_INTERVAL = 2000; // 2秒最小间隔
 
-function getRandomUserAgent(): string {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-}
-
 function randomDelay(min = 1000, max = 3000): Promise<void> {
   const delay = Math.floor(Math.random() * (max - min + 1)) + min;
   return new Promise(resolve => setTimeout(resolve, delay));
+}
+
+/**
+ * 检测是否为豆瓣 challenge 页面
+ */
+function isDoubanChallengePage(html: string): boolean {
+  return (
+    html.includes('sha512') &&
+    html.includes('process(cha)') &&
+    html.includes('载入中')
+  );
 }
 
 export const runtime = 'nodejs';
@@ -98,7 +100,29 @@ export async function GET(request: Request) {
       throw new Error(`HTTP error! Status: ${response.status}`);
     }
 
-    const html = await response.text();
+    let html = await response.text();
+
+    // 检测 challenge 页面 - 使用 Puppeteer 绕过
+    if (isDoubanChallengePage(html)) {
+      console.log(`[Douban Comments] 检测到 challenge 页面，尝试使用 Puppeteer 绕过...`);
+
+      try {
+        // 尝试使用 Puppeteer 绕过 Challenge
+        const puppeteerResult = await bypassDoubanChallenge(target);
+        html = puppeteerResult.html;
+
+        // 再次检测是否成功绕过
+        if (isDoubanChallengePage(html)) {
+          console.log(`[Douban Comments] Puppeteer 绕过失败`);
+          throw new Error('豆瓣反爬虫激活，无法获取短评');
+        }
+
+        console.log(`[Douban Comments] ✅ Puppeteer 成功绕过 Challenge`);
+      } catch (puppeteerError) {
+        console.error(`[Douban Comments] Puppeteer 执行失败:`, puppeteerError);
+        throw new Error('豆瓣反爬虫激活，无法获取短评');
+      }
+    }
 
     // 解析短评列表
     const comments = parseDoubanComments(html);

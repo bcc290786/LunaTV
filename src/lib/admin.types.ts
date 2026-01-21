@@ -71,6 +71,7 @@ export interface AdminConfig {
     url: string;  // m3u 地址
     ua?: string;
     epg?: string; // 节目单
+    isTvBox?: boolean;
     from: 'config' | 'custom';
     channelNumber?: number;
     disabled?: boolean;
@@ -108,6 +109,14 @@ export interface AdminConfig {
     allowedIPs: string[];               // 允许的IP地址列表
     enableRateLimit: boolean;            // 是否启用频率限制
     rateLimit: number;                   // 每分钟允许的请求次数
+  };
+  TVBoxProxyConfig?: {
+    enabled: boolean;                    // 是否为TVBox启用Cloudflare Worker代理
+    proxyUrl: string;                    // Cloudflare Worker代理地址（例如：https://corsapi.smone.workers.dev）
+  };
+  VideoProxyConfig?: {
+    enabled: boolean;                    // 是否为普通视频源启用Cloudflare Worker代理
+    proxyUrl: string;                    // Cloudflare Worker代理地址（例如：https://corsapi.smone.workers.dev）
   };
   TelegramAuthConfig?: {
     enabled: boolean;                    // 是否启用Telegram登录

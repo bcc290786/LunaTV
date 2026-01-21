@@ -122,6 +122,12 @@ function PlayPageClient() {
   // 下载选集面板状态
   const [showDownloadEpisodeSelector, setShowDownloadEpisodeSelector] = useState(false);
 
+  // 下载功能启用状态
+  const [downloadEnabled, setDownloadEnabled] = useState(true);
+
+  // 视频分辨率状态
+  const [videoResolution, setVideoResolution] = useState<{ width: number; height: number } | null>(null);
+
   // 进度条拖拽状态管理
   const isDraggingProgressRef = useRef(false);
   const seekResetTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -176,6 +182,25 @@ function PlayPageClient() {
   const anime4kModeRef = useRef(anime4kMode);
   const anime4kScaleRef = useRef(anime4kScale);
   const netdiskModalContentRef = useRef<HTMLDivElement>(null);
+
+  // 获取服务器配置（下载功能开关）
+  useEffect(() => {
+    const fetchServerConfig = async () => {
+      try {
+        const response = await fetch('/api/server-config');
+        if (response.ok) {
+          const config = await response.json();
+          setDownloadEnabled(config.DownloadEnabled ?? true);
+        }
+      } catch (error) {
+        console.error('获取服务器配置失败:', error);
+        // 出错时默认启用下载功能
+        setDownloadEnabled(true);
+      }
+    };
+    fetchServerConfig();
+  }, []);
+
   useEffect(() => {
     anime4kEnabledRef.current = anime4kEnabled;
     anime4kModeRef.current = anime4kMode;
@@ -761,7 +786,7 @@ function PlayPageClient() {
     }
 
     try {
-      const response = await fetch(`https://api.bgm.tv/v0/subjects/${bangumiId}`);
+      const response = await fetch(`/api/proxy/bangumi?path=v0/subjects/${bangumiId}`);
       if (response.ok) {
         const bangumiData = await response.json();
         
@@ -2732,6 +2757,21 @@ function PlayPageClient() {
     const initFromHistory = async () => {
       if (!currentSource || !currentId) return;
 
+      // 🔥 关键修复：优先检查 sessionStorage 中的临时进度（换源时保存的）
+      const tempProgressKey = `temp_progress_${currentSource}_${currentId}_${currentEpisodeIndex}`;
+      const tempProgress = sessionStorage.getItem(tempProgressKey);
+
+      if (tempProgress) {
+        const savedTime = parseFloat(tempProgress);
+        if (savedTime > 1) {
+          resumeTimeRef.current = savedTime;
+          console.log(`🎯 从 sessionStorage 恢复换源前的播放进度: ${savedTime.toFixed(2)}s`);
+          // 立即清除临时进度，避免重复恢复
+          sessionStorage.removeItem(tempProgressKey);
+          return; // 优先使用临时进度，不再读取历史记录
+        }
+      }
+
       try {
         const allRecords = await getAllPlayRecords();
         const key = generateStorageKey(currentSource, currentId);
@@ -2822,6 +2862,14 @@ function PlayPageClient() {
       const currentPlayTime = artPlayerRef.current?.currentTime || 0;
       console.log('换源前当前播放时间:', currentPlayTime);
 
+      // 🔥 关键修复：将播放进度保存到 sessionStorage，防止组件重新挂载时丢失
+      // 使用临时的 key，在新组件挂载后立即读取并清除
+      if (currentPlayTime > 1) {
+        const tempProgressKey = `temp_progress_${newSource}_${newId}_${currentEpisodeIndex}`;
+        sessionStorage.setItem(tempProgressKey, currentPlayTime.toString());
+        console.log(`💾 已保存临时播放进度到 sessionStorage: ${tempProgressKey} = ${currentPlayTime.toFixed(2)}s`);
+      }
+
       // 清除前一个历史记录
       if (currentSourceRef.current && currentIdRef.current) {
         try {
@@ -2852,23 +2900,17 @@ function PlayPageClient() {
           // 当前集数超出新源范围，跳转到新源的最后一集
           targetIndex = newDetail.episodes.length - 1;
           console.log(`⚠️ 当前集数(${currentEpisodeIndex})超出新源范围(${newDetail.episodes.length}集)，跳转到第${targetIndex + 1}集`);
+          // 🔥 集数变化时，清除保存的临时进度
+          const tempProgressKey = `temp_progress_${newSource}_${newId}_${currentEpisodeIndex}`;
+          sessionStorage.removeItem(tempProgressKey);
         } else {
           // 集数在范围内，保持不变
           console.log(`✅ 换源保持当前集数: 第${targetIndex + 1}集`);
         }
       }
 
-      // 如果仍然是同一集数且播放进度有效，则在播放器就绪后恢复到原始进度
-      if (targetIndex !== currentEpisodeIndex) {
-        resumeTimeRef.current = 0;
-        console.log(`🔄 换源后集数变化: ${currentEpisodeIndex + 1} -> ${targetIndex + 1}，重置播放进度`);
-      } else if (
-        (!resumeTimeRef.current || resumeTimeRef.current === 0) &&
-        currentPlayTime > 1
-      ) {
-        resumeTimeRef.current = currentPlayTime;
-        console.log(`💾 换源保持播放进度: ${currentPlayTime.toFixed(2)}s`);
-      }
+      // 🔥 由于组件会重新挂载，不再需要设置 resumeTimeRef（进度已保存到 sessionStorage）
+      // 组件重新挂载后会自动从 sessionStorage 恢复进度
 
       // 更新URL参数（不刷新页面）
       const newUrl = new URL(window.location.href);
@@ -3002,12 +3044,41 @@ function PlayPageClient() {
   // 集数切换
   // ---------------------------------------------------------------------------
   // 处理集数切换
-  const handleEpisodeChange = (episodeNumber: number) => {
+  const handleEpisodeChange = async (episodeNumber: number) => {
     if (episodeNumber >= 0 && episodeNumber < totalEpisodes) {
       // 在更换集数前保存当前播放进度
       if (artPlayerRef.current && artPlayerRef.current.paused) {
         saveCurrentPlayProgress();
       }
+
+      // 🔥 优化：检查目标集数是否有历史播放记录
+      try {
+        const allRecords = await getAllPlayRecords();
+        const key = generateStorageKey(currentSourceRef.current, currentIdRef.current);
+        const record = allRecords[key];
+
+        // 如果历史记录的集数与目标集数匹配，且有播放进度
+        if (record && record.index - 1 === episodeNumber && record.play_time > 0) {
+          resumeTimeRef.current = record.play_time;
+          console.log(`🎯 切换到第${episodeNumber + 1}集，恢复历史进度: ${record.play_time.toFixed(2)}s`);
+        } else {
+          resumeTimeRef.current = 0;
+          console.log(`🔄 切换到第${episodeNumber + 1}集，从头播放`);
+        }
+      } catch (err) {
+        console.warn('读取历史记录失败:', err);
+        resumeTimeRef.current = 0;
+      }
+
+      // 🔥 优化：同步更新URL参数，保持URL与实际播放状态一致
+      try {
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.set('index', episodeNumber.toString());
+        window.history.replaceState({}, '', newUrl.toString());
+      } catch (err) {
+        console.warn('更新URL参数失败:', err);
+      }
+
       setCurrentEpisodeIndex(episodeNumber);
     }
   };
@@ -4007,7 +4078,7 @@ function PlayPageClient() {
           {
             position: 'left',
             index: 13,
-            html: '<i class="art-icon flex"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" fill="currentColor"/></svg></i>',
+            html: '<i class="art-icon flex hint--top" aria-label="播放下一集"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" fill="currentColor"/></svg></i>',
             tooltip: '播放下一集',
             click: function () {
               handleNextEpisode();
@@ -4016,7 +4087,7 @@ function PlayPageClient() {
           // 🚀 简单弹幕发送按钮（仅Web端显示）
           ...(isMobile ? [] : [{
             position: 'right',
-            html: '弹',
+            html: '<span class="hint--top" aria-label="发送弹幕">弹</span>',
             tooltip: '发送弹幕',
             click: function () {
               if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
@@ -4232,6 +4303,116 @@ function PlayPageClient() {
       artPlayerRef.current.on('ready', async () => {
         setError(null);
         setPlayerReady(true); // 标记播放器已就绪，启用观影室同步
+
+        // 使用ArtPlayer layers API添加分辨率徽章（带渐变和发光效果）
+        const video = artPlayerRef.current.video as HTMLVideoElement;
+
+        // 添加分辨率徽章layer
+        artPlayerRef.current.layers.add({
+          name: 'resolution-badge',
+          html: '<div class="resolution-badge"></div>',
+          style: {
+            position: 'absolute',
+            bottom: '60px',
+            left: '20px',
+            padding: '5px 12px',
+            borderRadius: '6px',
+            fontSize: '13px',
+            fontWeight: '700',
+            color: 'white',
+            textShadow: '0 1px 3px rgba(0, 0, 0, 0.5)',
+            backdropFilter: 'blur(10px)',
+            pointerEvents: 'none',
+            opacity: '1',
+            transition: 'opacity 0.3s ease',
+            letterSpacing: '0.5px',
+          },
+        });
+
+        // 自动隐藏徽章的定时器
+        let badgeHideTimer: NodeJS.Timeout | null = null;
+
+        const showBadge = () => {
+          const badge = artPlayerRef.current?.layers['resolution-badge'];
+          if (badge) {
+            badge.style.opacity = '1';
+
+            // 清除之前的定时器
+            if (badgeHideTimer) {
+              clearTimeout(badgeHideTimer);
+            }
+
+            // 3秒后自动隐藏徽章
+            badgeHideTimer = setTimeout(() => {
+              if (badge) {
+                badge.style.opacity = '0';
+              }
+            }, 3000);
+          }
+        };
+
+        const updateResolution = () => {
+          if (video.videoWidth && video.videoHeight) {
+            const width = video.videoWidth;
+            const label = width >= 3840 ? '4K' :
+                         width >= 2560 ? '2K' :
+                         width >= 1920 ? '1080P' :
+                         width >= 1280 ? '720P' :
+                         width + 'P';
+
+            // 根据质量设置不同的渐变背景和发光效果
+            let gradientStyle = '';
+            let boxShadow = '';
+
+            if (width >= 3840) {
+              // 4K - 金色/紫色渐变 + 金色发光
+              gradientStyle = 'linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #FF8C00 100%)';
+              boxShadow = '0 0 20px rgba(255, 215, 0, 0.6), 0 0 10px rgba(255, 165, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.3)';
+            } else if (width >= 2560) {
+              // 2K - 蓝色/青色渐变 + 蓝色发光
+              gradientStyle = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+              boxShadow = '0 0 20px rgba(102, 126, 234, 0.6), 0 0 10px rgba(118, 75, 162, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.3)';
+            } else if (width >= 1920) {
+              // 1080P - 绿色/青色渐变 + 绿色发光
+              gradientStyle = 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)';
+              boxShadow = '0 0 15px rgba(17, 153, 142, 0.5), 0 0 8px rgba(56, 239, 125, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.3)';
+            } else if (width >= 1280) {
+              // 720P - 橙色渐变 + 橙色发光
+              gradientStyle = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
+              boxShadow = '0 0 15px rgba(240, 147, 251, 0.4), 0 0 8px rgba(245, 87, 108, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.3)';
+            } else {
+              // 低质量 - 灰色渐变
+              gradientStyle = 'linear-gradient(135deg, #606c88 0%, #3f4c6b 100%)';
+              boxShadow = '0 0 10px rgba(96, 108, 136, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2)';
+            }
+
+            // 更新layer内容和样式
+            const badge = artPlayerRef.current.layers['resolution-badge'];
+            if (badge) {
+              badge.innerHTML = label;
+              badge.style.background = gradientStyle;
+              badge.style.boxShadow = boxShadow;
+            }
+
+            // 同时更新state供React使用
+            setVideoResolution({ width: video.videoWidth, height: video.videoHeight });
+
+            // 显示徽章并启动自动隐藏定时器
+            showBadge();
+          }
+        };
+
+        // 监听loadedmetadata事件获取分辨率
+        video.addEventListener('loadedmetadata', updateResolution);
+        if (video.videoWidth && video.videoHeight) {
+          updateResolution();
+        }
+
+        // 用户交互时重新显示徽章（鼠标移动、点击、键盘操作）
+        const userInteractionEvents = ['mousemove', 'click', 'touchstart', 'keydown'];
+        userInteractionEvents.forEach(eventName => {
+          artPlayerRef.current.on(eventName, showBadge);
+        });
 
         // 观影室时间同步：从URL参数读取初始播放时间
         const timeParam = searchParams.get('t') || searchParams.get('time');
@@ -5369,36 +5550,40 @@ function PlayPageClient() {
             </button>
 
             {/* 下载按钮 */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowDownloadEpisodeSelector(true);
-              }}
-              className='flex group relative items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 min-h-[40px] sm:min-h-[44px] rounded-2xl bg-linear-to-br from-white/90 via-white/80 to-white/70 hover:from-white hover:via-white/95 hover:to-white/90 dark:from-gray-800/90 dark:via-gray-800/80 dark:to-gray-800/70 dark:hover:from-gray-800 dark:hover:via-gray-800/95 dark:hover:to-gray-800/90 backdrop-blur-md border border-white/60 dark:border-gray-700/60 shadow-[0_2px_8px_rgba(0,0,0,0.04),inset_0_1px_0_rgba(255,255,255,0.25)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.1)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.3)] dark:hover:shadow-[0_4px_12px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.15)] hover:scale-105 active:scale-95 transition-all duration-300 overflow-hidden'
-              title='下载视频'
-            >
-              <div className='absolute inset-0 bg-linear-to-r from-transparent via-white/0 to-transparent group-hover:via-white/30 dark:group-hover:via-white/10 transition-all duration-500'></div>
-              <Download className='relative z-10 w-3.5 sm:w-4 h-3.5 sm:h-4 text-gray-600 dark:text-gray-400' />
-              <span className='relative z-10 hidden sm:inline text-xs font-medium text-gray-600 dark:text-gray-300'>
-                下载
-              </span>
-            </button>
+            {downloadEnabled && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowDownloadEpisodeSelector(true);
+                }}
+                className='flex group relative items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 min-h-[40px] sm:min-h-[44px] rounded-2xl bg-linear-to-br from-white/90 via-white/80 to-white/70 hover:from-white hover:via-white/95 hover:to-white/90 dark:from-gray-800/90 dark:via-gray-800/80 dark:to-gray-800/70 dark:hover:from-gray-800 dark:hover:via-gray-800/95 dark:hover:to-gray-800/90 backdrop-blur-md border border-white/60 dark:border-gray-700/60 shadow-[0_2px_8px_rgba(0,0,0,0.04),inset_0_1px_0_rgba(255,255,255,0.25)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.1)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.3)] dark:hover:shadow-[0_4px_12px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.15)] hover:scale-105 active:scale-95 transition-all duration-300 overflow-hidden'
+                title='下载视频'
+              >
+                <div className='absolute inset-0 bg-linear-to-r from-transparent via-white/0 to-transparent group-hover:via-white/30 dark:group-hover:via-white/10 transition-all duration-500'></div>
+                <Download className='relative z-10 w-3.5 sm:w-4 h-3.5 sm:h-4 text-gray-600 dark:text-gray-400' />
+                <span className='relative z-10 hidden sm:inline text-xs font-medium text-gray-600 dark:text-gray-300'>
+                  下载
+                </span>
+              </button>
+            )}
 
             {/* 下载管理按钮 */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowDownloadPanel(true);
-              }}
-              className='flex group relative items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 min-h-[40px] sm:min-h-[44px] rounded-2xl bg-linear-to-br from-white/90 via-white/80 to-white/70 hover:from-white hover:via-white/95 hover:to-white/90 dark:from-gray-800/90 dark:via-gray-800/80 dark:to-gray-800/70 dark:hover:from-gray-800 dark:hover:via-gray-800/95 dark:hover:to-gray-800/90 backdrop-blur-md border border-white/60 dark:border-gray-700/60 shadow-[0_2px_8px_rgba(0,0,0,0.04),inset_0_1px_0_rgba(255,255,255,0.25)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.1)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.3)] dark:hover:shadow-[0_4px_12px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.15)] hover:scale-105 active:scale-95 transition-all duration-300 overflow-hidden'
-              title='下载管理'
-            >
-              <div className='absolute inset-0 bg-linear-to-r from-transparent via-white/0 to-transparent group-hover:via-white/30 dark:group-hover:via-white/10 transition-all duration-500'></div>
-              <span className='relative z-10 text-sm sm:text-base'>📥</span>
-              <span className='relative z-10 hidden sm:inline text-xs font-medium text-gray-600 dark:text-gray-300'>
-                管理
-              </span>
-            </button>
+            {downloadEnabled && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowDownloadPanel(true);
+                }}
+                className='flex group relative items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 min-h-[40px] sm:min-h-[44px] rounded-2xl bg-linear-to-br from-white/90 via-white/80 to-white/70 hover:from-white hover:via-white/95 hover:to-white/90 dark:from-gray-800/90 dark:via-gray-800/80 dark:to-gray-800/70 dark:hover:from-gray-800 dark:hover:via-gray-800/95 dark:hover:to-gray-800/90 backdrop-blur-md border border-white/60 dark:border-gray-700/60 shadow-[0_2px_8px_rgba(0,0,0,0.04),inset_0_1px_0_rgba(255,255,255,0.25)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.1)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.3)] dark:hover:shadow-[0_4px_12px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.15)] hover:scale-105 active:scale-95 transition-all duration-300 overflow-hidden'
+                title='下载管理'
+              >
+                <div className='absolute inset-0 bg-linear-to-r from-transparent via-white/0 to-transparent group-hover:via-white/30 dark:group-hover:via-white/10 transition-all duration-500'></div>
+                <span className='relative z-10 text-sm sm:text-base'>📥</span>
+                <span className='relative z-10 hidden sm:inline text-xs font-medium text-gray-600 dark:text-gray-300'>
+                  管理
+                </span>
+              </button>
+            )}
 
             {/* 折叠控制按钮 - 仅在 lg 及以上屏幕显示 */}
             <button

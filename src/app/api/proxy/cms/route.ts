@@ -7,17 +7,19 @@
  * 3. 解决第三方 API 的 CORS 限制
  * 4. 安全白名单机制，防止被滥用
  * 5. 成人内容源拦截（纵深防御第二层）
+ * 6. ☁️ Cloudflare Worker 代理加速（优先使用，失败时降级到本地）
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getConfig } from '@/lib/config';
+import { DEFAULT_USER_AGENT } from '@/lib/user-agent';
 
 // 使用 Node.js Runtime 以获得更好的网络兼容性
 export const runtime = 'nodejs';
 
 // 完整的浏览器请求头伪装
 const BROWSER_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'User-Agent': DEFAULT_USER_AGENT,
   'Accept': 'application/json, text/javascript, */*; q=0.01',
   'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
   'Accept-Encoding': 'gzip, deflate',
@@ -125,9 +127,11 @@ export async function GET(request: NextRequest) {
     // 🔒 纵深防御第二层：成人内容源拦截
     const shouldFilterAdult = filterParam !== 'off'; // 默认启用过滤
 
+    // 获取配置（用于检查成人源和代理设置）
+    const config = await getConfig();
+
     if (shouldFilterAdult) {
       try {
-        const config = await getConfig();
         const sourceConfigs = config.SourceConfig || [];
 
         // 检查请求的 URL 是否属于成人源
@@ -164,7 +168,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 创建 AbortController 用于超时控制
+    // ☁️ 注意：Cloudflare Worker 代理已在 getAvailableApiSites() 中统一应用
+    // targetUrl 如果来自已启用代理的源，已经包含代理前缀
+    // 这里只需要直接请求即可，不需要再次应用代理
+
+    // 🔄 直接请求目标 URL（可能是原始 URL，也可能是已包含代理的 URL）
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 20000); // 20秒超时
 
@@ -219,7 +227,10 @@ export async function GET(request: NextRequest) {
       // 返回 JSON 响应
       return NextResponse.json(jsonData, {
         status: 200,
-        headers: getCorsHeaders()
+        headers: {
+          ...getCorsHeaders(),
+          'X-Proxy-Via': 'Local-Server', // 🔍 标记请求经过本地代理
+        }
       });
 
     } catch (fetchError: any) {

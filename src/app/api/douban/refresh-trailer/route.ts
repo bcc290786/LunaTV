@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { DEFAULT_USER_AGENT } from '@/lib/user-agent';
 
 /**
  * 刷新过期的 Douban trailer URL
@@ -14,7 +15,8 @@ async function fetchTrailerWithRetry(id: string, retryCount = 0): Promise<string
   const startTime = Date.now();
 
   try {
-    const mobileApiUrl = `https://m.douban.com/rexxar/api/v2/movie/${id}`;
+    // 先尝试 movie 端点
+    let mobileApiUrl = `https://m.douban.com/rexxar/api/v2/movie/${id}`;
 
     console.log(`[refresh-trailer] 开始请求影片 ${id}${retryCount > 0 ? ` (重试 ${retryCount}/${MAX_RETRIES})` : ''}`);
 
@@ -22,10 +24,10 @@ async function fetchTrailerWithRetry(id: string, retryCount = 0): Promise<string
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT);
 
-    const response = await fetch(mobileApiUrl, {
+    let response = await fetch(mobileApiUrl, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+        'User-Agent': DEFAULT_USER_AGENT,
         'Referer': 'https://movie.douban.com/explore',
         'Accept': 'application/json, text/plain, */*',
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
@@ -35,9 +37,36 @@ async function fetchTrailerWithRetry(id: string, retryCount = 0): Promise<string
         'Sec-Fetch-Mode': 'cors',
         'Sec-Fetch-Site': 'same-site',
       },
+      redirect: 'manual', // 手动处理重定向
     });
 
     clearTimeout(timeoutId);
+
+    // 如果是 3xx 重定向，说明可能是电视剧，尝试 tv 端点
+    if (response.status >= 300 && response.status < 400) {
+      console.log(`[refresh-trailer] 检测到重定向，尝试 TV 端点`);
+      mobileApiUrl = `https://m.douban.com/rexxar/api/v2/tv/${id}`;
+
+      const tvController = new AbortController();
+      const tvTimeoutId = setTimeout(() => tvController.abort(), TIMEOUT);
+
+      response = await fetch(mobileApiUrl, {
+        signal: tvController.signal,
+        headers: {
+          'User-Agent': DEFAULT_USER_AGENT,
+          'Referer': 'https://movie.douban.com/explore',
+          'Accept': 'application/json, text/plain, */*',
+          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Origin': 'https://movie.douban.com',
+          'Sec-Fetch-Dest': 'empty',
+          'Sec-Fetch-Mode': 'cors',
+          'Sec-Fetch-Site': 'same-site',
+        },
+      });
+
+      clearTimeout(tvTimeoutId);
+    }
 
     const fetchTime = Date.now() - startTime;
     console.log(`[refresh-trailer] 影片 ${id} 请求完成，耗时: ${fetchTime}ms, 状态: ${response.status}`);
