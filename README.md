@@ -25,7 +25,7 @@
 ![HLS.js](https://img.shields.io/badge/HLS.js-1.6.15-ec407a)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Docker Ready](https://img.shields.io/badge/Docker-ready-blue?logo=docker)
-![Version](https://img.shields.io/badge/Version-5.9.3-orange)
+![Version](https://img.shields.io/badge/Version-6.0.0-orange)
 
 </div>
 
@@ -33,7 +33,7 @@
 
 ## 📢 项目说明
 
-本项目是在 **MoonTV** 基础上进行的深度二次开发版本，从 **v4.3.1** 版本开始，持续迭代至当前 **v5.9.3**，累计新增 60+ 重大功能模块，400+ 细节优化。所有新增功能详见 [CHANGELOG](CHANGELOG)。
+本项目是在 **MoonTV** 基础上进行的深度二次开发版本，从 **v4.3.1** 版本开始，持续迭代至当前 **v6.0.0**，累计新增 60+ 重大功能模块，400+ 细节优化。所有新增功能详见 [CHANGELOG](CHANGELOG)。
 
 ### 💡 核心增强亮点
 
@@ -69,6 +69,14 @@
 - **自动重试机制**：403错误自动重试，确保预告片持续可用
 - **性能日志追踪**：完整的预告片加载性能监控和日志记录
 - **电视剧内容支持**：扩展预告片支持到电视剧等非电影内容
+- **🚀 视频缓存优化（Kvrocks）**：两层缓存架构大幅减少流量消耗
+  - **Kvrocks元数据缓存**：URL映射和文件信息（15分钟TTL）
+  - **文件系统视频缓存**：本地存储视频内容（12小时TTL，最大500MB）
+  - **智能缓存命中**：首次下载后，后续请求直接从本地返回
+  - **流量节省96%**：28次请求从932MB降至33MB（实测数据）
+  - **响应速度提升**：从秒级降至毫秒级
+  - **自动过期清理**：定时清理过期缓存，释放存储空间
+  - **缓存统计API**：`GET /api/video-cache/stats` 查看缓存使用情况
 
 #### 🔧 代理配置系统
 - **双层代理架构**：TVBox和视频播放独立代理配置，互不干扰
@@ -347,6 +355,31 @@
 
 ## 🚀 部署
 
+### 💻 最低配置要求
+
+为确保流畅运行，建议服务器满足以下最低配置：
+
+#### Docker 自托管部署
+- **CPU**: 2 核心（推荐 4 核心）
+- **内存**: 2GB RAM（推荐 4GB）
+- **存储**: 10GB 可用空间（推荐 20GB，用于视频缓存和数据库）
+- **网络**: 10Mbps 上行带宽（推荐 100Mbps）
+
+#### Zeabur / Vercel 云端部署
+- **无需自备服务器**：平台自动分配资源
+- **Zeabur**: Developer Plan 提供最多 2 vCPU 和 4GB RAM（$5/月含 $5 credit，用量不超过则免费）
+- **Vercel**: 无服务器架构，按需自动扩容
+
+#### ⚠️ 常见卡顿原因
+- ❌ **CPU 不足**：单核或低频 CPU 会导致视频转码和搜索缓慢
+- ❌ **内存不足**：少于 2GB 内存会导致频繁 OOM（内存溢出）
+- ❌ **网络带宽低**：上行带宽低于 5Mbps 会导致视频播放卡顿
+- ❌ **磁盘 I/O 慢**：使用机械硬盘会影响数据库和缓存性能
+
+**💡 提示**：如果遇到卡顿问题，请先检查服务器配置是否满足最低要求！
+
+---
+
 ### ⚡ 一键部署到 Zeabur（最简单）
 
 点击下方按钮即可一键部署，自动配置 LunaTV + Kvrocks 数据库：
@@ -386,9 +419,12 @@ services:
       - PASSWORD=your_secure_password
       - NEXT_PUBLIC_STORAGE_TYPE=kvrocks
       - KVROCKS_URL=redis://moontv-kvrocks:6666
+      - VIDEO_CACHE_DIR=/app/video-cache  # 视频缓存目录
       # 可选：站点配置
       - SITE_BASE=https://your-domain.com
       - NEXT_PUBLIC_SITE_NAME=LunaTV Enhanced
+    volumes:
+      - video-cache:/app/video-cache  # 视频缓存持久化
     networks:
       - moontv-network
     depends_on:
@@ -409,6 +445,7 @@ networks:
 
 volumes:
   kvrocks-data:
+  video-cache:  # 视频缓存 volume
 ```
 
 ### 🔴 Redis 存储（有数据丢失风险）
@@ -575,6 +612,7 @@ Zeabur 是一站式云端部署平台，使用预构建的 Docker 镜像可以�
    # 必填：存储配置
    NEXT_PUBLIC_STORAGE_TYPE=kvrocks
    KVROCKS_URL=redis://apachekvrocks:6666
+   VIDEO_CACHE_DIR=/app/video-cache
 
    # 可选：站点配置
    SITE_BASE=https://your-domain.zeabur.app
@@ -713,6 +751,7 @@ Zeabur 是一站式云端部署平台，使用预构建的 Docker 镜像可以�
 - **无服务器限制**：Vercel 免费版有 10 秒函数执行时间限制，某些耗时操作可能超时
 - **流量限制**：Vercel 免费版每月 100GB 流量，个人使用足够
 - **冷启动**：长时间无访问后首次访问会较慢（约 1-3 秒）
+- **不支持视频缓存**：Vercel 无持久化文件系统，无法使用视频缓存功能（视频仍可正常播放，只是每次都需要代理请求）
 - **不支持功能**：由于无服务器架构限制，以下功能可能受限：
   - 大量并发搜索请求
   - 超长视频的弹幕加载
@@ -1040,35 +1079,31 @@ services:
 
 完整的功能更新和 Bug 修复记录请查看 [CHANGELOG](CHANGELOG)。
 
-### 最新版本：v5.9.3 (2026-01-13)
+### 最新版本：v6.0.0 (2026-01-22)
 
 #### 新增功能
-- 📱 直播长频道名点击展开功能：为移动端长频道名添加点击展开/收起功能
-- ⚡ 下载功能增强：添加片段时长追踪、时间范围和完整视频总时长显示
-- 🔍 繁体中文搜索支持：添加繁体中文搜索功能，提升繁体用户搜索体验
-- 📅 2026年份筛选选项：为豆瓣内容添加2026年份筛选功能
-- 📚 fnOS部署指南：添加飞牛NAS（fnOS）部署指南到README文档
-- 📺 TVBox源管理增强：添加手动开关和完整源解析支持
-- 🖼️ 百度图片代理选项：为豆瓣图片添加百度图片代理选项，提供更多代理方式
+- ✨ 用户体验增强：删除用户加载状态指示器和画质徽章自动隐藏功能
+- 🚀 Puppeteer反爬虫系统：全面支持豆瓣反爬虫绕过（包括Docker/Vercel环境和评论API），集成反机器人检测、重试机制和页面加载稳定性增强
+- 📱 豆瓣移动端API回退机制：添加备用数据源和详细日志追踪
 
 #### 性能优化
-- ⚡ 繁体中文搜索全面优化：采用轻量级switch-chinese库、tree-shakeable导入、单例模式、多策略搜索、限制转换范围（前3个变体）、移除冗余detect()调用
-- 🔧 TVBox优化：User-Agent更新为okhttp/4.1.0，优化管理后台开关布局
-- 🚀 User-Agent全面升级：更新所有User-Agent到2026年最新版本（Chrome 135, Firefox 146, Safari 26, Edge 143）
-- ⚡ 图片代理性能优化：改进图片代理性能和缓存策略
+- ⚡ 主页加载性能优化：实施分批加载策略（7个请求分3批）、延迟加载非关键数据、Web Worker处理即将上映数据、React.memo优化组件，CPU使用从200-300%降至50-80%
+- ⚡ 算法优化：即将上映算法复杂度从O(n²)优化到O(n)，使用Map替代reduce+find
+- 🚀 User-Agent管理重构：统一管理并恢复旧版User-Agent以兼容移动端短剧API
+- ⬆️ 依赖升级：puppeteer-core从24.35.0升级到24.36.0
+- 🔧 架构优化：MobileActionSheet使用独立Portal容器、内容类型检测从scraper移至AI orchestrator防止超时
+- ⚡ 播放进度恢复：切换剧集时自动恢复播放进度
 
 #### Bug 修复
-- 🐛 修复直播移动端频道名显示：优化移动端频道名显示，添加chevron指示器用于可展开名称
-- 🐛 修复HeroBanner标题溢出问题：移除最大宽度限制，防止标题截断和溢出容器
-- 🐛 修复Tavily API密钥未保存提醒：添加未保存更改警告
-- 🐛 修复EPG频道解析：支持多行XML格式的频道解析
-- 🐛 修复TVBox配置和解析：支持加密配置（Base64）、JSON注释解析、M3U8代理源键传递、完整URL解析修复直播片段500错误
-- 🐛 修复TVBox功能问题：AdminConfig类型定义、编辑模式开关状态更新、解析和播放模式改进
-- 🐛 修复UI问题：标签按钮可见性和移动端响应式、搜索分类按钮深色模式对比度、ScrollableRow隐藏按钮捕获指针事件、Firefox悬停消失问题
-- 🐛 修复部署问题：Zeabur部署standalone模式、时间范围显示条件运算符优先级、繁简转换应用范围
+- 🐛 修复用户删除功能：完善删除流程并修正Redis方法命名错误
+- 🐛 修复AI类型检测：改进电影/电视剧类型检测算法，防止误识别
+- 🐛 修复分辨率检测：使用视频宽度而非高度进行检测
+- 🐛 修复Husky hooks兼容性：更新shebang支持Windows系统
+- 🐛 修复豆瓣API问题：处理302重定向、429限流、移动端API响应格式、电视剧剧集数据、请求头设置，防止重试循环和无效数据循环
 
 ### 重大里程碑版本
 
+- **v6.0.0**：主页性能大幅优化（CPU降至50-80%）、Puppeteer反爬虫系统、豆瓣移动端API回退、Web Worker优化、播放进度恢复、依赖升级
 - **v5.9.3**：繁体中文搜索支持、下载功能增强、TVBox源管理增强、User-Agent全面升级到2026最新版本、百度图片代理、fnOS部署指南
 - **v5.9.2**：豆瓣预告片系统增强、代理配置系统、M3U8下载器6倍提速、EPG系统增强、直播直连模式、移动导航Netflix风格重设计
 - **v5.9.1**：玻璃态设计、Material UI CategoryBar、Netflix风格HeroBanner、AI功能全面增强、豆瓣缓存优化

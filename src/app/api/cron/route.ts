@@ -7,6 +7,8 @@ import { db } from '@/lib/db';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
 import { refreshLiveChannels } from '@/lib/live';
 import { SearchResult } from '@/lib/types';
+import { recordRequest, getDbQueryCount, resetDbQueryCount } from '@/lib/performance-monitor';
+import { migrateOldCache, cleanupExpiredCache } from '@/lib/video-cache';
 
 export const runtime = 'nodejs';
 
@@ -14,15 +16,36 @@ export const runtime = 'nodejs';
 let isRunning = false;
 
 export async function GET(request: NextRequest) {
+  const startTime = Date.now();
+  const startMemory = process.memoryUsage().heapUsed;
+
+  // Reset DB query counter at the start
+  resetDbQueryCount();
+
   console.log(request.url);
 
   if (isRunning) {
     console.log('⚠️ Cron job 已在运行中，跳过此次请求');
-    return NextResponse.json({
+    const alreadyRunningResponse = {
       success: false,
       message: 'Cron job already running',
       timestamp: new Date().toISOString(),
+    };
+    const responseSize = Buffer.byteLength(JSON.stringify(alreadyRunningResponse), 'utf8');
+
+    recordRequest({
+      timestamp: startTime,
+      method: 'GET',
+      path: '/api/cron',
+      statusCode: 200,
+      duration: Date.now() - startTime,
+      memoryUsed: (process.memoryUsage().heapUsed - startMemory) / 1024 / 1024,
+      dbQueries: getDbQueryCount(),
+      requestSize: 0,
+      responseSize,
     });
+
+    return NextResponse.json(alreadyRunningResponse);
   }
 
   try {
@@ -31,23 +54,50 @@ export async function GET(request: NextRequest) {
 
     await cronJob();
 
-    return NextResponse.json({
+    const successResponse = {
       success: true,
       message: 'Cron job executed successfully',
       timestamp: new Date().toISOString(),
+    };
+    const successResponseSize = Buffer.byteLength(JSON.stringify(successResponse), 'utf8');
+
+    recordRequest({
+      timestamp: startTime,
+      method: 'GET',
+      path: '/api/cron',
+      statusCode: 200,
+      duration: Date.now() - startTime,
+      memoryUsed: (process.memoryUsage().heapUsed - startMemory) / 1024 / 1024,
+      dbQueries: getDbQueryCount(),
+      requestSize: 0,
+      responseSize: successResponseSize,
     });
+
+    return NextResponse.json(successResponse);
   } catch (error) {
     console.error('Cron job failed:', error);
 
-    return NextResponse.json(
-      {
-        success: false,
-        message: 'Cron job failed',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: new Date().toISOString(),
-      },
-      { status: 500 }
-    );
+    const errorResponse = {
+      success: false,
+      message: 'Cron job failed',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString(),
+    };
+    const errorResponseSize = Buffer.byteLength(JSON.stringify(errorResponse), 'utf8');
+
+    recordRequest({
+      timestamp: startTime,
+      method: 'GET',
+      path: '/api/cron',
+      statusCode: 500,
+      duration: Date.now() - startTime,
+      memoryUsed: (process.memoryUsage().heapUsed - startMemory) / 1024 / 1024,
+      dbQueries: getDbQueryCount(),
+      requestSize: 0,
+      responseSize: errorResponseSize,
+    });
+
+    return NextResponse.json(errorResponse, { status: 500 });
   } finally {
     isRunning = false;
   }
@@ -71,6 +121,24 @@ async function cronJob() {
     console.log('✅ 配置刷新完成');
   } catch (err) {
     console.error('❌ 配置刷新失败:', err);
+  }
+
+  // 视频缓存迁移（只在第一次运行时执行）
+  try {
+    console.log('🔄 检查并迁移旧视频缓存...');
+    await migrateOldCache();
+    console.log('✅ 视频缓存迁移完成');
+  } catch (err) {
+    console.error('❌ 视频缓存迁移失败:', err);
+  }
+
+  // 清理过期的视频缓存
+  try {
+    console.log('🧹 清理过期视频缓存...');
+    await cleanupExpiredCache();
+    console.log('✅ 视频缓存清理完成');
+  } catch (err) {
+    console.error('❌ 视频缓存清理失败:', err);
   }
 
   try {
@@ -170,6 +238,24 @@ async function refreshConfig() {
 
 async function refreshRecordAndFavorites() {
   try {
+    // 获取配置
+    const config = await getConfig();
+    const cronConfig = config.CronConfig || {
+      enableAutoRefresh: true,
+      maxRecordsPerRun: 100,
+      onlyRefreshRecent: true,
+      recentDays: 30,
+      onlyRefreshOngoing: true,
+    };
+
+    // 检查是否启用自动刷新
+    if (!cronConfig.enableAutoRefresh) {
+      console.log('⏸️ 自动刷新已禁用，跳过播放记录和收藏刷新');
+      return;
+    }
+
+    console.log('📊 Cron 配置:', cronConfig);
+
     const users = await db.getAllUsers();
     console.log('📋 数据库中的用户列表:', users);
     
@@ -220,15 +306,50 @@ async function refreshRecordAndFavorites() {
       // 播放记录
       try {
         const playRecords = await db.getAllPlayRecords(user);
-        const totalRecords = Object.keys(playRecords).length;
+        let recordsToProcess = Object.entries(playRecords);
+        const totalRecords = recordsToProcess.length;
+
+        // 🔥 优化 1: 仅处理最近活跃的记录
+        if (cronConfig.onlyRefreshRecent) {
+          const cutoffTime = Date.now() - cronConfig.recentDays * 24 * 60 * 60 * 1000;
+          recordsToProcess = recordsToProcess.filter(([_, record]) => {
+            const saveTime = new Date(record.save_time).getTime();
+            return saveTime > cutoffTime;
+          });
+          console.log(`📅 过滤最近 ${cronConfig.recentDays} 天活跃记录: ${recordsToProcess.length}/${totalRecords}`);
+        }
+
+        // 🔥 优化 2: 限制每次处理的记录数
+        if (recordsToProcess.length > cronConfig.maxRecordsPerRun) {
+          // 按保存时间排序，优先处理最新的
+          recordsToProcess.sort((a, b) => {
+            const timeA = new Date(a[1].save_time).getTime();
+            const timeB = new Date(b[1].save_time).getTime();
+            return timeB - timeA;
+          });
+          recordsToProcess = recordsToProcess.slice(0, cronConfig.maxRecordsPerRun);
+          console.log(`🔢 限制处理数量: ${recordsToProcess.length}/${totalRecords}`);
+        }
+
         let processedRecords = 0;
 
-        for (const [key, record] of Object.entries(playRecords)) {
+        for (const [key, record] of recordsToProcess) {
           try {
             const [source, id] = key.split('+');
             if (!source || !id) {
               console.warn(`跳过无效的播放记录键: ${key}`);
               continue;
+            }
+
+            // 🔥 优化 3: 仅刷新连载中的剧集（已完结的跳过）
+            if (cronConfig.onlyRefreshOngoing) {
+              // 如果有 original_episodes，说明是已知总集数的剧集
+              // 如果当前集数 >= original_episodes，说明已完结
+              if (record.original_episodes && record.total_episodes >= record.original_episodes) {
+                console.log(`⏭️ 跳过已完结剧集: ${record.title} (${record.total_episodes}/${record.original_episodes})`);
+                processedRecords++;
+                continue;
+              }
             }
 
             const detail = await getDetail(source, id, record.title);
@@ -276,10 +397,33 @@ async function refreshRecordAndFavorites() {
         favorites = Object.fromEntries(
           Object.entries(favorites).filter(([_, fav]) => fav.origin !== 'live')
         );
-        const totalFavorites = Object.keys(favorites).length;
+        let favoritesToProcess = Object.entries(favorites);
+        const totalFavorites = favoritesToProcess.length;
+
+        // 🔥 优化 1: 仅处理最近活跃的收藏
+        if (cronConfig.onlyRefreshRecent) {
+          const cutoffTime = Date.now() - cronConfig.recentDays * 24 * 60 * 60 * 1000;
+          favoritesToProcess = favoritesToProcess.filter(([_, fav]) => {
+            const saveTime = new Date(fav.save_time).getTime();
+            return saveTime > cutoffTime;
+          });
+          console.log(`📅 过滤最近 ${cronConfig.recentDays} 天活跃收藏: ${favoritesToProcess.length}/${totalFavorites}`);
+        }
+
+        // 🔥 优化 2: 限制每次处理的收藏数
+        if (favoritesToProcess.length > cronConfig.maxRecordsPerRun) {
+          favoritesToProcess.sort((a, b) => {
+            const timeA = new Date(a[1].save_time).getTime();
+            const timeB = new Date(b[1].save_time).getTime();
+            return timeB - timeA;
+          });
+          favoritesToProcess = favoritesToProcess.slice(0, cronConfig.maxRecordsPerRun);
+          console.log(`🔢 限制处理数量: ${favoritesToProcess.length}/${totalFavorites}`);
+        }
+
         let processedFavorites = 0;
 
-        for (const [key, fav] of Object.entries(favorites)) {
+        for (const [key, fav] of favoritesToProcess) {
           try {
             const [source, id] = key.split('+');
             if (!source || !id) {

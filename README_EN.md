@@ -25,7 +25,7 @@
 ![HLS.js](https://img.shields.io/badge/HLS.js-1.6.15-ec407a)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Docker Ready](https://img.shields.io/badge/Docker-ready-blue?logo=docker)
-![Version](https://img.shields.io/badge/Version-5.9.3-orange)
+![Version](https://img.shields.io/badge/Version-6.0.0-orange)
 
 </div>
 
@@ -33,7 +33,7 @@
 
 ## 📢 Project Overview
 
-This project is a deeply customized version based on **MoonTV**, continuously developed from **v4.3.1** to the current **v5.9.3**, with **60+ major feature modules** and **400+ detailed optimizations** added. See [CHANGELOG](CHANGELOG) for all new features.
+This project is a deeply customized version based on **MoonTV**, continuously developed from **v4.3.1** to the current **v6.0.0**, with **60+ major feature modules** and **400+ detailed optimizations** added. See [CHANGELOG](CHANGELOG) for all new features.
 
 ### 💡 Core Enhancement Highlights
 
@@ -69,6 +69,14 @@ This project is a deeply customized version based on **MoonTV**, continuously de
 - **Auto-Retry Mechanism**: 403 error auto-retry, ensures trailer continuous availability
 - **Performance Logging**: Complete trailer loading performance monitoring and logging
 - **TV Series Support**: Extended trailer support to TV series and non-movie content
+- **🚀 Video Cache Optimization (Kvrocks)**: Two-layer cache architecture dramatically reduces traffic consumption
+  - **Kvrocks Metadata Cache**: URL mapping and file info (15-minute TTL)
+  - **File System Video Cache**: Local storage of video content (12-hour TTL, max 500MB)
+  - **Smart Cache Hit**: After first download, subsequent requests served from local files
+  - **96% Traffic Savings**: 28 requests reduced from 932MB to 33MB (real data)
+  - **Response Speed Boost**: From seconds to milliseconds
+  - **Auto Expiration Cleanup**: Scheduled cleanup of expired cache, freeing storage space
+  - **Cache Stats API**: `GET /api/video-cache/stats` to view cache usage
 
 #### 🔧 Proxy Configuration System
 - **Dual-Layer Proxy Architecture**: TVBox and video playback independent proxy configs, no interference
@@ -361,6 +369,31 @@ This project is licensed under **CC BY-NC-SA 4.0**, with the following terms:
 
 ## 🚀 Deployment
 
+### 💻 Minimum System Requirements
+
+To ensure smooth operation, your server should meet the following minimum specifications:
+
+#### Docker Self-Hosted Deployment
+- **CPU**: 2 cores (4 cores recommended)
+- **RAM**: 2GB (4GB recommended)
+- **Storage**: 10GB available space (20GB recommended for video cache and database)
+- **Network**: 10Mbps upload bandwidth (100Mbps recommended)
+
+#### Zeabur / Vercel Cloud Deployment
+- **No Server Required**: Platform automatically allocates resources
+- **Zeabur**: Developer Plan provides up to 2 vCPU and 4GB RAM ($5/month with $5 credit, free if usage doesn't exceed credit)
+- **Vercel**: Serverless architecture with automatic scaling
+
+#### ⚠️ Common Performance Issues
+- ❌ **Insufficient CPU**: Single-core or low-frequency CPU causes slow video transcoding and search
+- ❌ **Low Memory**: Less than 2GB RAM leads to frequent OOM (Out of Memory) errors
+- ❌ **Low Bandwidth**: Upload bandwidth below 5Mbps causes video playback stuttering
+- ❌ **Slow Disk I/O**: Using HDD affects database and cache performance
+
+**💡 Tip**: If you experience lag, please check if your server meets the minimum requirements first!
+
+---
+
 ### ⚡ One-Click Deploy to Zeabur (Easiest)
 
 Click the button below for one-click deployment, automatically configures LunaTV + Kvrocks database:
@@ -400,9 +433,12 @@ services:
       - PASSWORD=your_secure_password
       - NEXT_PUBLIC_STORAGE_TYPE=kvrocks
       - KVROCKS_URL=redis://moontv-kvrocks:6666
+      - VIDEO_CACHE_DIR=/app/video-cache  # Video cache directory
       # Optional: Site configuration
       - SITE_BASE=https://your-domain.com
       - NEXT_PUBLIC_SITE_NAME=LunaTV Enhanced
+    volumes:
+      - video-cache:/app/video-cache  # Video cache persistence
     networks:
       - moontv-network
     depends_on:
@@ -423,6 +459,7 @@ networks:
 
 volumes:
   kvrocks-data:
+  video-cache:  # Video cache volume
 ```
 
 ### 🔴 Redis Storage (Risk of Data Loss)
@@ -589,6 +626,7 @@ Zeabur is a one-stop cloud deployment platform. Using pre-built Docker images al
    # Required: Storage Configuration
    NEXT_PUBLIC_STORAGE_TYPE=kvrocks
    KVROCKS_URL=redis://apachekvrocks:6666
+   VIDEO_CACHE_DIR=/app/video-cache
 
    # Optional: Site Configuration
    SITE_BASE=https://your-domain.zeabur.app
@@ -727,6 +765,7 @@ Perfect for users without servers. Completely free deployment (Vercel Free Tier 
 - **Serverless Constraints**: Vercel free tier has 10-second function execution time limit, some time-consuming operations may timeout
 - **Traffic Limit**: Vercel free tier provides 100GB monthly bandwidth, sufficient for personal use
 - **Cold Start**: First visit after long inactivity may be slower (approximately 1-3 seconds)
+- **No Video Caching**: Vercel has no persistent file system, video caching feature is unavailable (videos still play normally, just require proxy requests each time)
 - **Limited Features**: Due to serverless architecture, the following features may be restricted:
   - High concurrent search requests
   - Long video danmaku loading
@@ -1054,35 +1093,31 @@ This project works with [OrionTV](https://github.com/zimplexing/OrionTV) on Andr
 
 For complete feature updates and bug fixes, see [CHANGELOG](CHANGELOG).
 
-### Latest Version: v5.9.3 (2026-01-13)
+### Latest Version: v6.0.0 (2026-01-22)
 
 #### Added
-- 📱 Long Channel Name Click-to-Expand: Added click-to-expand/collapse for long channel names on mobile
-- ⚡ Download Feature Enhancement: Added segment duration tracking, time range, and total duration display for complete videos
-- 🔍 Traditional Chinese Search Support: Added Traditional Chinese search functionality, improved Traditional user search experience
-- 📅 2026 Year Filter Option: Added 2026 year filter option for Douban content
-- 📚 fnOS Deployment Guide: Added Feiniao NAS (fnOS) deployment guide to README
-- 📺 TVBox Source Management Enhancement: Added manual toggle control and complete source parsing support
-- 🖼️ Baidu Image Proxy Option: Added Baidu image proxy option for Douban images, providing more proxy methods
+- ✨ User Experience Enhancement: Delete user loading state indicator and auto-hide quality badge functionality
+- 🚀 Puppeteer Anti-Scraping System: Comprehensive Douban anti-scraping bypass support (including Docker/Vercel environments and Comments API), integrated anti-bot detection, retry mechanism, and page load stability enhancements
+- 📱 Douban Mobile API Fallback: Added backup data source and detailed logging for fallback tracking
 
 #### Performance Optimizations
-- ⚡ Traditional Chinese Search Comprehensive Optimization: Lightweight switch-chinese library, tree-shakeable imports, singleton pattern, multi-strategy search, limited conversion range (top 3 variants), removed redundant detect() calls
-- 🔧 TVBox Optimization: User-Agent updated to okhttp/4.1.0, optimized admin backend toggle layout
-- 🚀 User-Agent Comprehensive Upgrade: Updated all User-Agents to 2026 latest versions (Chrome 135, Firefox 146, Safari 26, Edge 143)
-- ⚡ Image Proxy Performance Optimization: Improved image proxy performance and caching strategy
+- ⚡ Homepage Loading Performance Optimization: Implemented batch loading strategy (7 requests in 3 batches), deferred non-critical data loading, Web Worker for upcoming releases processing, React.memo component optimization, CPU usage reduced from 200-300% to 50-80%
+- ⚡ Algorithm Optimization: Upcoming releases algorithm complexity optimized from O(n²) to O(n), using Map instead of reduce+find
+- 🚀 User-Agent Management Refactor: Unified management and restored legacy User-Agent for mobile short drama API compatibility
+- ⬆️ Dependency Upgrade: puppeteer-core upgraded from 24.35.0 to 24.36.0
+- 🔧 Architecture Optimization: MobileActionSheet uses isolated Portal container, content type detection moved from scraper to AI orchestrator to prevent timeout
+- ⚡ Playback Progress Restore: Auto-restore playback progress when switching episodes
 
 #### Fixed
-- 🐛 Fixed Live Mobile Channel Name Display: Optimized mobile channel name display, added chevron indicators for expandable names
-- 🐛 Fixed HeroBanner Title Overflow: Removed max-width constraint, prevent title truncation and container overflow
-- 🐛 Fixed Tavily API Key Unsaved Warning: Added unsaved changes warning
-- 🐛 Fixed EPG Channel Parsing: Support multi-line XML format channel parsing
-- 🐛 Fixed TVBox Config and Parsing: Support encrypted config (Base64), JSON comment parsing, M3U8 proxy source key propagation, full URL resolution fixes live segment 500 error
-- 🐛 Fixed TVBox Functionality Issues: AdminConfig type definition, edit mode toggle state updates, parsing and playback mode improvements
-- 🐛 Fixed UI Issues: Tab button visibility and mobile responsiveness, search category button dark mode contrast, ScrollableRow hidden button pointer event capture, Firefox hover disappearance
-- 🐛 Fixed Deployment Issues: Zeabur deployment standalone mode, time range display condition operator precedence, Traditional-Simplified conversion application scope
+- 🐛 Fixed User Deletion: Improved deletion workflow and corrected Redis method naming errors
+- 🐛 Fixed AI Type Detection: Improved movie/TV series type detection algorithm to prevent misidentification
+- 🐛 Fixed Resolution Detection: Use video width instead of height for resolution detection
+- 🐛 Fixed Husky Hooks Compatibility: Updated shebang for Windows system support
+- 🐛 Fixed Douban API Issues: Handled 302 redirects, 429 rate limiting, mobile API response format, TV series episode data, request headers, preventing retry loops and invalid data loops
 
 ### Major Milestone Versions
 
+- **v6.0.0**: Homepage performance drastically optimized (CPU reduced to 50-80%), Puppeteer anti-scraping system, Douban mobile API fallback, Web Worker optimization, playback progress restore, dependency upgrades
 - **v5.9.3**: Traditional Chinese search support, download feature enhancement, TVBox source management enhancement, User-Agent comprehensive upgrade to 2026 latest versions, Baidu image proxy, fnOS deployment guide
 - **v5.9.2**: Douban Trailer System Enhancement, Proxy Configuration System, M3U8 Downloader 6x Speed Boost, EPG System Enhancement, Live Direct Connect Mode, Mobile Navigation Netflix-style Redesign
 - **v5.9.1**: Glassmorphism Design, Material UI CategoryBar, Netflix-style HeroBanner, AI Feature Comprehensive Enhancement, Douban Cache Optimization
